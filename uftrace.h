@@ -186,6 +186,7 @@ struct opts {
 	char *lib_path;
 	char *filter;
 	char *trigger;
+	char *sig_trigger;
 	char *tid;
 	char *exename;
 	char *dirname;

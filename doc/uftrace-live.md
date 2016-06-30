@@ -145,6 +145,9 @@ OPTIONS
 --no-randomize-addr
 :   Disable ASLR (Address Space Layout Randomization).  It makes the target process fix its address space layout.
 
+\--signal=*TRG*
+:   Set trigger on selected signals.  This option can be used more than once.  See *TRIGGERS*.
+
 
 FILTERS
 =======
@@ -300,6 +303,10 @@ The 'finish' trigger is to end recording.  The process still can run and this ca
 The 'filter' and 'notrace' triggers have same effect as -F/--filter and -N/--notrace options respectively.
 
 Triggers only work for user-level functions for now.
+
+The trigger can be activated for signals.  This is done by signal trigger with \--signal option.  The syntax is similar to function trigger but only "trace_on", "trace_off" and "finish" trigger actions are supported.
+
+    $ uftrace live --signal 'SIGUSR1@finish' ./some-daemon
 
 
 ARGUMENTS
