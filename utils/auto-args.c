@@ -19,11 +19,6 @@ static struct rb_root auto_argspec = RB_ROOT;
 static struct rb_root auto_retspec = RB_ROOT;
 static struct rb_root auto_enum = RB_ROOT;
 
-extern void add_trigger(struct uftrace_filter *filter, struct uftrace_trigger *tr,
-			bool exact_match);
-extern int setup_trigger_action(char *str, struct uftrace_trigger *tr,
-				char **module, unsigned long orig_flags);
-
 static void add_auto_args(struct rb_root *root, struct uftrace_filter *entry,
 			  struct uftrace_trigger *tr)
 {
