@@ -66,7 +66,7 @@ static bool can_use_fast_libmcount(struct opts *opts)
 	if (getenv("UFTRACE_FILTER") || getenv("UFTRACE_TRIGGER") ||
 	    getenv("UFTRACE_ARGUMENT") || getenv("UFTRACE_RETVAL") ||
 	    getenv("UFTRACE_PATCH") || getenv("UFTRACE_SCRIPT") ||
-	    getenv("UFTRACE_AUTO_ARGS"))
+	    getenv("UFTRACE_AUTO_ARGS") || getenv("UFTRACE_SIGNAL"))
 		return false;
 	return true;
 }
@@ -245,6 +245,12 @@ static void setup_child_environ(struct opts *opts, int pfd)
 	if (opts->patt_type != PATT_REGEX)
 		setenv("UFTRACE_PATTERN", get_filter_pattern(opts->patt_type), 1);
 
+	if (opts->sig_trigger)
+		setenv("UFTRACE_SIGNAL", opts->sig_trigger, 1);
+
+	/*
+	 * ----- end of option processing -----
+	 */
 	if (opts->lib_path)
 		snprintf(buf, sizeof(buf), "%s/libmcount/", opts->lib_path);
 	else

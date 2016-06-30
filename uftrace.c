@@ -96,6 +96,7 @@ enum options {
 	OPT_auto_args,
 	OPT_libname,
 	OPT_match_type,
+	OPT_signal,
 };
 
 static struct argp_option uftrace_options[] = {
@@ -168,6 +169,7 @@ static struct argp_option uftrace_options[] = {
 	{ "auto-args", OPT_auto_args, 0, 0, "Show arguments and return value of known functions" },
 	{ "libname", OPT_libname, 0, 0, "Show libname name with symbol name" },
 	{ "match", OPT_match_type, "TYPE", 0, "Support pattern match: regex, glob (default: regex)" },
+	{ "signal", OPT_signal, "SIG@act[,act,...]", 0, "Trigger action on those SIGnal" },
 	{ "help", 'h', 0, 0, "Give this help list" },
 	{ 0 }
 };
@@ -721,6 +723,10 @@ static error_t parse_option(int key, char *arg, struct argp_state *state)
 			pr_use("invalid match pattern: %s (ignoring...)\n", arg);
 			opts->patt_type = PATT_REGEX;
 		}
+		break;
+
+	case OPT_signal:
+		opts->sig_trigger = opt_add_string(opts->sig_trigger, arg);
 		break;
 
 	case ARGP_KEY_ARG:
