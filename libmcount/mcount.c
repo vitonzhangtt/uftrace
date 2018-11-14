@@ -1750,4 +1750,30 @@ TEST_CASE(mcount_thread_data)
 	return TEST_OK;
 }
 
+TEST_CASE(mcount_signal_setup)
+{
+	struct signal_trigger_item *item;
+
+	/* it signal triggers are maintained in a stack (LIFO) */
+	mcount_signal_init("SIGUSR1@traceon;SIGRTMIN+3@trace-off;SIGRTMAX-1@finish");
+
+	item = list_first_entry(&siglist, typeof(*item), list);
+	TEST_EQ(item->sig, SIGRTMAX - 1);
+	TEST_EQ(item->tr.flags, TRIGGER_FL_FINISH);
+
+	item = list_next_entry(item, list);
+	TEST_EQ(item->sig, SIGRTMIN + 3);
+	TEST_EQ(item->tr.flags, TRIGGER_FL_TRACE_OFF);
+
+	item = list_next_entry(item, list);
+	TEST_EQ(item->sig, SIGUSR1);
+	TEST_EQ(item->tr.flags, TRIGGER_FL_TRACE_ON);
+
+	mcount_signal_finish();
+
+	TEST_EQ(list_empty(&siglist), true);
+
+	return TEST_OK;
+}
+
 #endif /* UNIT_TEST */
