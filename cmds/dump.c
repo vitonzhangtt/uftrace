@@ -1466,6 +1466,9 @@ static void dump_replay_event(struct uftrace_dump_ops *ops,
 
 		call_if_nonull(ops->perf_event, ops, &perf, rec);
 	}
+	else if (is_extern_record(task, rec)) {
+		call_if_nonull(ops->task_event, ops, task);
+	}
 	else {
 		struct uftrace_perf_reader *perf;
 
