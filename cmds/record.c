@@ -1465,6 +1465,7 @@ static void check_binary(struct opts *opts)
 		EM_X86_64, EM_ARM, EM_AARCH64, EM_386
 	};
 
+again:
 	pr_dbg3("checking binary %s\n", opts->exename);
 
 	if (access(opts->exename, X_OK) < 0) {
@@ -1481,8 +1482,21 @@ static void check_binary(struct opts *opts)
 	if (read(fd, elf_ident, sizeof(elf_ident)) < 0)
 		pr_err("Cannot read '%s'", opts->exename);
 
-	if (memcmp(elf_ident, ELFMAG, SELFMAG))
-		pr_err_ns(UFTRACE_ELF_MSG, opts->exename);
+	if (memcmp(elf_ident, ELFMAG, SELFMAG)) {
+		char *script = check_script_file(opts->exename);
+		char *p;
+
+		if (script == NULL)
+			pr_err_ns(UFTRACE_ELF_MSG, opts->exename);
+
+		/* ignore options */
+		p = strchr(script, ' ');
+		if (p)
+			*p = '\0';
+
+		opts->exename = script;
+		goto again;
+	}
 
 	if (read(fd, &e_type, sizeof(e_type)) < 0)
 		pr_err("Cannot read '%s'", opts->exename);
@@ -1922,6 +1936,8 @@ int do_child_exec(int pfd[2], int ready, struct opts *opts,
 		  int argc, char *argv[])
 {
 	uint64_t dummy;
+	char *shebang;
+	struct strv new_args = STRV_INIT;
 
 	if (opts->no_randomize_addr) {
 		/* disable ASLR (Address Space Layout Randomization) */
@@ -1930,6 +1946,28 @@ int do_child_exec(int pfd[2], int ready, struct opts *opts,
 	}
 
 	close(pfd[0]);
+
+	shebang = check_script_file(argv[0]);
+	if (shebang) {
+		char *p;
+		int i;
+
+		strv_append(&new_args, shebang);
+
+		p = strchr(shebang, ' ');
+		if (p != NULL) {
+			*p++ = '\0';
+			strv_append(&new_args, p);
+		}
+
+		for (i = 0; i < argc; i++)
+			strv_append(&new_args, argv[i]);
+
+		argc = new_args.nr;
+		argv = new_args.p;
+
+		free(shebang);
+	}
 
 	setup_child_environ(opts, pfd[1], argc, argv);
 
