@@ -826,11 +826,11 @@ unsigned long plthook_exit(long *retval)
 	assert(mtdp != NULL);
 
 	/*
-	 * there's a race with mcount_finish(), if it wins it already
-	 * restored the original return address for us so just return.
+	 * it's only called when mcount_entry() was succeeded
+	 * no need to check recursion here.  But still needs to
+	 * prevent recursion during this call.
 	 */
-	if (!mcount_guard_recursion(mtdp))
-		return 0;
+	__mcount_guard_recursion(mtdp);
 
 again:
 	if (likely(mtdp->idx > 0))
@@ -874,9 +874,6 @@ again:
 		mcount_auto_reset(mtdp);
 
 	mcount_unguard_recursion(mtdp);
-
-	if (unlikely(mcount_should_stop()))
-		ret_addr = 0;
 
 	compiler_barrier();
 

@@ -358,6 +358,16 @@ static void mtd_dtor(void *arg)
 	uftrace_send_message(UFTRACE_MSG_TASK_END, &tmsg, sizeof(tmsg));
 }
 
+void __mcount_guard_recursion(struct mcount_thread_data *mtdp)
+{
+	mtdp->recursion_marker = true;
+}
+
+void __mcount_unguard_recursion(struct mcount_thread_data *mtdp)
+{
+	mtdp->recursion_marker = false;
+}
+
 bool mcount_guard_recursion(struct mcount_thread_data *mtdp)
 {
 	if (unlikely(mtdp->recursion_marker))
@@ -376,7 +386,7 @@ void mcount_unguard_recursion(struct mcount_thread_data *mtdp)
 {
 	mtdp->recursion_marker = false;
 
-	if (mcount_should_stop())
+	if (unlikely(mcount_should_stop()))
 		mtd_dtor(mtdp);
 }
 
@@ -1005,11 +1015,11 @@ unsigned long mcount_exit(long *retval)
 	assert(mtdp != NULL);
 
 	/*
-	 * if finish trigger was fired during the call, it already
-	 * restored the original return address for us so just return.
+	 * it's only called when mcount_entry() was succeeded
+	 * no need to check recursion here.  But still needs to
+	 * prevent recursion during this call.
 	 */
-	if (!mcount_guard_recursion(mtdp))
-		return 0;
+	__mcount_guard_recursion(mtdp);
 
 	rstack = &mtdp->rstack[mtdp->idx - 1];
 
@@ -1023,9 +1033,6 @@ unsigned long mcount_exit(long *retval)
 		mcount_auto_reset(mtdp);
 
 	mcount_unguard_recursion(mtdp);
-
-	if (unlikely(mcount_should_stop()))
-		retaddr = 0;
 
 	compiler_barrier();
 
