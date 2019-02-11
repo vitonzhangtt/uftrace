@@ -106,9 +106,9 @@ static int prepare_dynamic_update(void)
 static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 			     enum uftrace_pattern_type ptype)
 {
-	char *name, *nopatched_name = NULL;
 	struct symtab *symtab = &symtabs->symtab;
 	struct strv funcs = STRV_INIT;
+	char *name;
 	int j;
 
 	if (patch_funcs == NULL)
@@ -149,8 +149,6 @@ static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 			stats.total++;
 		}
 
-		if (!found || stats.failed || stats.skipped)
-			nopatched_name = name;
 		if (!found)
 			stats.nomatch++;
 
@@ -158,9 +156,8 @@ static int do_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 	}
 
 	if (stats.failed || stats.skipped || stats.nomatch) {
-		pr_out("%s cannot be patched dynamically\n",
-		       (stats.failed + stats.skipped + stats.nomatch) > 1 ?
-		       "some functions" : nopatched_name);
+		pr_out("uftrace: some functions cannot be patched dynamically (%d/%d)\n",
+		       stats.total - (stats.failed + stats.skipped), stats.total);
 	}
 
 	strv_free(&funcs);
