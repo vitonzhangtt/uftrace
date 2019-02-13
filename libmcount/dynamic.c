@@ -44,11 +44,13 @@ static int find_dynamic_module(struct dl_phdr_info *info, size_t sz, void *data)
 {
 	const char *name = info->dlpi_name;
 	struct mcount_dynamic_info *mdi;
+	struct symtabs *symtabs = data;
 	bool base_addr_set = false;
 	unsigned i;
 
-	if ((data == NULL && name[0] == '\0') || strstr(name, data)) {
-		mdi = xmalloc(sizeof(*mdi));
+	/* TODO: support dynamic tracing for libraries */
+	if (name[0] == '\0') {
+		mdi = xzalloc(sizeof(*mdi));
 		mdi->mod_name = xstrdup(name);
 		mdi->base_addr = 0;
 
@@ -71,6 +73,7 @@ static int find_dynamic_module(struct dl_phdr_info *info, size_t sz, void *data)
 		}
 		mdi->base_addr += info->dlpi_addr;
 		mdi->text_addr += info->dlpi_addr;
+		mdi->nr_symbols = symtabs->symtab.nr_sym;
 
 		mdi->next = mdinfo;
 		mdinfo = mdi;
@@ -83,14 +86,14 @@ static int find_dynamic_module(struct dl_phdr_info *info, size_t sz, void *data)
 	return 0;
 }
 
-static int prepare_dynamic_update(void)
+static int prepare_dynamic_update(struct symtabs *symtabs)
 {
 	struct mcount_dynamic_info *mdi;
 	int ret = 0;
 
 	mcount_disasm_init();
 
-	dl_iterate_phdr(find_dynamic_module, NULL);
+	dl_iterate_phdr(find_dynamic_module, symtabs);
 
 	mdi = mdinfo;
 	while (mdi) {
@@ -192,7 +195,7 @@ int mcount_dynamic_update(struct symtabs *symtabs, char *patch_funcs,
 	int ret = 0;
 	int success;
 
-	if (prepare_dynamic_update() < 0) {
+	if (prepare_dynamic_update(symtabs) < 0) {
 		pr_dbg("cannot setup dynamic tracing\n");
 		return -1;
 	}

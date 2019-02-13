@@ -16,6 +16,7 @@
 
 #define CALL_INSN_SIZE  5
 #define JMP_INSN_SIZE   6
+#define ORIG_INSN_SIZE  32
 
 /* target instrumentation function it needs to call */
 extern void __fentry__(void);
@@ -101,6 +102,18 @@ int mcount_setup_trampoline(struct mcount_dynamic_info *mdi)
 		memcpy((void *)mdi->trampoline + 16, trampoline, sizeof(trampoline));
 		memcpy((void *)mdi->trampoline + 16 + sizeof(trampoline),
 		       &dentry_addr, sizeof(dentry_addr));
+
+		if (mdi->nr_symbols) {
+			mdi->orig_insns_len = mdi->nr_symbols * ORIG_INSN_SIZE;
+			mdi->orig_insns_len = ALIGN(mdi->orig_insns_len, 4096);
+			mdi->orig_insns_cnt = 0;
+
+			mdi->orig_insns = mmap(NULL, mdi->orig_insns_len,
+					       PROT_READ | PROT_WRITE,
+					       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			if (mdi->orig_insns == MAP_FAILED)
+				pr_err("failed to allocate space for original insns");
+		}
 #endif
 	}
 	return 0;
@@ -110,6 +123,10 @@ void mcount_cleanup_trampoline(struct mcount_dynamic_info *mdi)
 {
 	if (mprotect((void *)mdi->text_addr, mdi->text_size, PROT_EXEC))
 		pr_err("cannot restore trampoline due to protection");
+
+	if (mdi->orig_insns &&
+	    mprotect(mdi->orig_insns, mdi->orig_insns_len, PROT_EXEC) < 0)
+		pr_err("cannot setup original instructions due to protection");
 }
 
 void mcount_arch_find_module(struct mcount_dynamic_info *mdi)
@@ -494,12 +511,13 @@ static int check_instrumentable(csh ud, cs_insn *ins)
 /*
  * Patch the instruction to the address as given for arguments.
  */
-static unsigned char * patch_code(uintptr_t addr, uint32_t target_addr,
-				  uint32_t origin_code_size)
+static unsigned char * patch_code(struct mcount_dynamic_info *mdi,
+				  uintptr_t addr, uint32_t origin_code_size)
 {
 	unsigned char *stored_addr, *origin_code_addr;
 	unsigned char call_insn[] = { 0xe8, 0x00, 0x00, 0x00, 0x00 };
 	unsigned char jmp_insn[] = { 0xff, 0x25, 0x00, 0x00, 0x00, 0x00 };
+	uint32_t target_addr = get_dentry_addr(mdi, addr);
 
 	/*
 	 *  stored origin instruction block:
@@ -512,18 +530,7 @@ static unsigned char * patch_code(uintptr_t addr, uint32_t target_addr,
 	 *  ----------------------
 	 */
 
-	/*
-	 * XXX: allocate memory to store the original instructions
-	 * and make them to executable.
-	 *
-	 * FIXME: use mmap() instead
-	 */
-	stored_addr = xmalloc(store_code_size);
-	memset(stored_addr, 0, store_code_size);
-
-	mprotect((void *)ROUND_DOWN((unsigned long)stored_addr, 4096),
-		 store_code_size + ((unsigned long)stored_addr & 0xfff),
-		 PROT_READ | PROT_WRITE | PROT_EXEC);
+	stored_addr = mdi->orig_insns + (mdi->orig_insns_cnt++ * ORIG_INSN_SIZE);
 
 	/* return address */
 	origin_code_addr = (void *)addr + origin_code_size;
@@ -568,19 +575,15 @@ static unsigned char * patch_code(uintptr_t addr, uint32_t target_addr,
 void do_instrument(struct mcount_dynamic_info *mdi,
 		   uintptr_t addr, uint32_t insn_size)
 {
-	uint32_t target_addr;
 	struct address_entry* el;
 	unsigned char *stored_code;
 
-	/* get the jump offset to the trampoline */
-	target_addr = get_dentry_addr(mdi, addr);
-
-	stored_code = patch_code(addr, target_addr, insn_size);
+	stored_code = patch_code(mdi, addr, insn_size);
 	if (stored_code) {
-		// TODO : keep and manage stored_code chunks.
-		el = malloc(sizeof(*el));
+		el = xmalloc(sizeof(*el));
 		el->addr = addr;
 		el->saved_addr = (uintptr_t)stored_code;
+
 		list_add_tail(&el->list, &address_list);
 	}
 }
