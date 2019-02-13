@@ -376,8 +376,12 @@ struct mcount_dynamic_info {
 	char *mod_name;
 	unsigned long base_addr;
 	unsigned long text_addr;
-	unsigned long text_size;
+	int text_size;
+	int nr_symbols;
 	unsigned long trampoline;
+	void *orig_insns;
+	int orig_insns_len;
+	int orig_insns_cnt;
 	void *arch;
 };
 
