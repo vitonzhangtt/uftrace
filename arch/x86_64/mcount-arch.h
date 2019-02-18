@@ -35,4 +35,8 @@ struct mcount_arch_context {
 #define ARCH_SUPPORT_AUTO_RECOVER  1
 #define ARCH_CAN_RESTORE_PLTHOOK   1
 
+/* dynamic patch result code */
+#define CODE_PATCH_OK  0x1
+#define CODE_PATCH_NO  0x2
+
 #endif /* MCOUNT_ARCH_H */

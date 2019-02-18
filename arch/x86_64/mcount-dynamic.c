@@ -252,8 +252,8 @@ static int patch_fentry_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 	return INSTRUMENT_SUCCESS;
 }
 
-static int patch_xray_func(struct mcount_dynamic_info *mdi, struct sym *sym,
-			   struct xray_instr_map *xrmap)
+static int update_xray_code(struct mcount_dynamic_info *mdi, struct sym *sym,
+			    struct xray_instr_map *xrmap)
 {
 	unsigned char entry_insn[] = { 0xeb, 0x09 };
 	unsigned char exit_insn[]  = { 0xc3, 0x2e };
@@ -307,7 +307,7 @@ static int patch_xray_func(struct mcount_dynamic_info *mdi, struct sym *sym,
 	return INSTRUMENT_SUCCESS;
 }
 
-static int update_xray_func(struct mcount_dynamic_info *mdi, struct sym *sym)
+static int patch_xray_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 {
 	unsigned i;
 	int ret = -2;
@@ -321,7 +321,7 @@ static int update_xray_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 		if (xrmap->addr < sym->addr || xrmap->addr >= sym->addr + sym->size)
 			continue;
 
-		while ((ret = patch_xray_func(mdi, sym, xrmap)) == 0) {
+		while ((ret = update_xray_code(mdi, sym, xrmap)) == 0) {
 			if (i == adi->xrmap_count - 1)
 				break;
 			i++;
@@ -336,10 +336,6 @@ static int update_xray_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 
 	return ret;
 }
-
-#ifdef HAVE_LIBCAPSTONE
-#include <capstone/capstone.h>
-#include <capstone/platform.h>
 
 /*
  *  we overwrite instructions over 5bytes from start of function
@@ -383,8 +379,6 @@ static int update_xray_func(struct mcount_dynamic_info *mdi, struct sym *sym)
  *
  */
 
-static csh csh_handle;
-
 /* stored original instructions */
 struct address_entry {
 	uintptr_t addr;
@@ -407,94 +401,6 @@ uintptr_t mcount_arch_original_code(unsigned long addr)
 		}
 	}
 	return ret_addr;
-}
-
-void mcount_disasm_init(void)
-{
-	if (cs_open(CS_ARCH_X86, CS_MODE_64, &csh_handle) != CS_ERR_OK) {
-		pr_dbg("failed to init Capstone disasm engine\n");
-		return;
-	}
-
-	cs_option(csh_handle, CS_OPT_DETAIL, CS_OPT_ON);
-}
-
-void mcount_disasm_finish(void)
-{
-	cs_close(&csh_handle);
-}
-
-#define CODE_PATCH_OK  0x1
-#define CODE_PATCH_NO  0x2
-
-/*
- * check whether the instruction can be executed regardless of its location.
- * TODO: this function does not completed, need more classify the cases.
- */
-static int check_instrumentable(csh ud, cs_insn *ins)
-{
-	int i, n;
-	csh handle = ud;
-	cs_x86 *x86;
-	cs_detail *detail;
-	bool jmp_or_call = false;
-	int status = CODE_PATCH_NO;
-
-	/*
-	 * 'detail' can be NULL on "data" instruction
-	 * if SKIPDATA option is turned ON
-	 */
-	if (ins->detail == NULL)
-		return status;
-
-	detail = ins->detail;
-
-	/* print the groups this instruction belong to */
-	if (detail->groups_count > 0) {
-		for (n = 0; n < detail->groups_count; n++) {
-			pr_dbg3("Instr Groups: %s\n",
-				cs_group_name(handle, detail->groups[n]));
-
-			if (detail->groups[n] == X86_GRP_CALL ||
-			    detail->groups[n] == X86_GRP_JUMP) {
-				jmp_or_call = true;
-			}
-		}
-	}
-
-	x86 = &(ins->detail->x86);
-
-	/* no operand */
-	if (!x86->op_count)
-		return CODE_PATCH_NO;
-
-	pr_dbg2("0x%" PRIx64 "[%02d]:\t%s\t%s\n",
-		ins->address, ins->size, ins->mnemonic, ins->op_str);
-
-	for (i = 0; i < x86->op_count; i++) {
-		cs_x86_op *op = &(x86->operands[i]);
-
-		switch((int)op->type) {
-		case X86_OP_REG:
-			status = CODE_PATCH_OK;
-			break;
-		case X86_OP_IMM:
-			if (jmp_or_call)
-				return CODE_PATCH_NO;
-			status = CODE_PATCH_OK;
-			break;
-		case X86_OP_MEM:
-			if (op->mem.base == X86_REG_RIP ||
-			    op->mem.index == X86_REG_RIP)
-				return CODE_PATCH_NO;
-
-			status = CODE_PATCH_OK;
-			break;
-		default:
-			break;
-		}
-	}
-	return status;
 }
 
 /*
@@ -577,30 +483,12 @@ void do_instrument(struct mcount_dynamic_info *mdi,
 	}
 }
 
+/* see mcount-insn.c */
+int disasm_check_insns(struct mcount_disasm_engine *disasm,
+		       uintptr_t addr, uint32_t size);
 
-static int check_instrument_size(uintptr_t addr, uint32_t size)
-{
-	cs_insn *insn;
-	uint32_t code_size = 0, count = 0, i;
-
-	count = cs_disasm(csh_handle, (unsigned char*)addr, size, addr, 0, &insn);
-
-	for (i = 0; i < count; i++) {
-		if (check_instrumentable(csh_handle, &insn[i]) == CODE_PATCH_NO) {
-			pr_dbg3("instruction not supported: %s\t %s\n",
-				insn[i].mnemonic, insn[i].op_str);
-			return INSTRUMENT_FAILED;
-		}
-
-		code_size += insn[i].size;
-		if (code_size >= CALL_INSN_SIZE)
-			return code_size;
-	}
-
-	return INSTRUMENT_FAILED;
-}
-
-static int patch_normal_func(struct mcount_dynamic_info *mdi, struct sym *sym)
+static int patch_normal_func(struct mcount_dynamic_info *mdi, struct sym *sym,
+			     struct mcount_disasm_engine *disasm)
 {
 	int instr_size;
 	const char *skip_syms[] = { "_start", "__libc_csu_init", "__libc_csu_fini", };
@@ -611,7 +499,7 @@ static int patch_normal_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 			return INSTRUMENT_SKIPPED;
 	}
 
-	instr_size = check_instrument_size(sym->addr, sym->size);
+	instr_size = disasm_check_insns(disasm, sym->addr, sym->size);
 	if (instr_size < CALL_INSN_SIZE)
 		return instr_size;
 
@@ -621,16 +509,15 @@ static int patch_normal_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 	return INSTRUMENT_SUCCESS;
 }
 
-#endif /* HAVE_LIBCAPSTONE */
-
-int mcount_patch_func(struct mcount_dynamic_info *mdi, struct sym *sym)
+int mcount_patch_func(struct mcount_dynamic_info *mdi, struct sym *sym,
+		      struct mcount_disasm_engine *disasm)
 {
 	struct arch_dynamic_info *adi = mdi->arch;
 	int result = INSTRUMENT_SKIPPED;
 
 	switch (adi->type) {
 	case DYNAMIC_XRAY:
-		result = update_xray_func(mdi, sym);
+		result = patch_xray_func(mdi, sym);
 		break;
 
 	case DYNAMIC_FENTRY:
@@ -638,10 +525,8 @@ int mcount_patch_func(struct mcount_dynamic_info *mdi, struct sym *sym)
 		break;
 
 	case DYNAMIC_NONE:
-#ifdef HAVE_LIBCAPSTONE
 		if (sym->size >= CALL_INSN_SIZE)
-			result = patch_normal_func(mdi, sym);
-#endif
+			result = patch_normal_func(mdi, sym, disasm);
 		break;
 
 	default:
