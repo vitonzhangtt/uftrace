@@ -1141,7 +1141,8 @@ void print_task_tree(struct uftrace_task *t, int depth)
 {
 	struct uftrace_task *c;
 
-	pr_out("%*s[%6d] %-16s\n", 3 * depth, "", t->tid, t->comm);
+	print_time_unit(t->time);
+	pr_out(" %*s[%6d] %-16s\n", 3 * depth, "", t->tid, t->comm);
 
 	list_for_each_entry(c, &t->children, siblings)
 		print_task_tree(c, depth + 1 + (c->ppid == t->pid));
@@ -1157,6 +1158,8 @@ int command_info(int argc, char *argv[], struct opts *opts)
 		pr_warn("cannot open record data: %s: %m\n", opts->dirname);
 		return -1;
 	}
+
+	fstack_setup_filters(opts, &handle);
 
 	if (opts->print_symtab) {
 		struct symtabs symtabs = {
@@ -1180,11 +1183,16 @@ int command_info(int argc, char *argv[], struct opts *opts)
 		read_task_txt_file(&handle.sessions, opts->dirname,
 				   false, false);
 
+		if (handle.hdr.feat_mask & PERF_EVENT) {
+			if (setup_perf_data(&handle) == 0 &&
+			    !verify_perf_task_tree(&handle))
+				pr_warn("task tree is inconsistent\n");
+		}
+
 		print_task_tree(handle.sessions.first_task, 0);
 		goto out;
 	}
 
-	fstack_setup_filters(opts, &handle);
 	process_uftrace_info(&handle, opts, print_info, NULL);
 
 out:

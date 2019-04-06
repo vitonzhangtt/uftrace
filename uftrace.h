@@ -340,6 +340,7 @@ struct uftrace_task {
 	struct uftrace_sess_ref	*sref_last;
 	struct list_head	 children;
 	struct list_head	 siblings;
+	uint64_t		 time;
 };
 
 #define UFTRACE_MSG_MAGIC 0xface

@@ -130,5 +130,6 @@ struct uftrace_record * get_perf_record(struct uftrace_data *handle,
 					struct uftrace_perf_reader *perf);
 void update_perf_task_comm(struct uftrace_data *handle);
 void process_perf_event(struct uftrace_data *handle);
+bool verify_perf_task_tree(struct uftrace_data *handle);
 
 #endif /* UFTRACE_PERF_H */
