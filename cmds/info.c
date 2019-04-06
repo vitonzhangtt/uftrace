@@ -1137,6 +1137,16 @@ void process_uftrace_info(struct uftrace_data *handle, struct opts *opts,
 	process(data, "\n");
 }
 
+void print_task_tree(struct uftrace_task *t, int depth)
+{
+	struct uftrace_task *c;
+
+	pr_out("%*s[%6d] %-16s\n", 3 * depth, "", t->tid, t->comm);
+
+	list_for_each_entry(c, &t->children, siblings)
+		print_task_tree(c, depth + 1 + (c->ppid == t->pid));
+}
+
 int command_info(int argc, char *argv[], struct opts *opts)
 {
 	int ret;
@@ -1162,6 +1172,15 @@ int command_info(int argc, char *argv[], struct opts *opts)
 		load_symtabs(&symtabs, opts->dirname, opts->exename);
 		print_symtabs(&symtabs);
 		unload_symtabs(&symtabs);
+		goto out;
+	}
+
+	if (opts->report_thread) {
+		/* ignore errors */
+		read_task_txt_file(&handle.sessions, opts->dirname,
+				   false, false);
+
+		print_task_tree(handle.sessions.first_task, 0);
 		goto out;
 	}
 
